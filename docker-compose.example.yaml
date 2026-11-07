@@ -1,0 +1,134 @@
+services:
+  bootstrap:
+    build:
+      context: .
+      dockerfile: docker/common/php-fpm/Dockerfile
+      args:
+        APP_ENV: local
+    command: php artisan migrate --force
+    volumes:
+      - public:/var/www/app/public
+      - storage:/var/www/app/storage
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  php-fpm:
+    build:
+      context: .
+      dockerfile: docker/common/php-fpm/Dockerfile
+      target: php_fpm
+      args:
+        APP_ENV: local
+    container_name: app_php_fpm
+    command: >
+      sh -c "
+        php artisan filament:optimize &&
+        php-fpm"
+    volumes:
+      - public:/var/www/app/public
+      - storage:/var/www/app/storage
+    env_file: .env
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "php-fpm-healthcheck || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  web:
+    image: nginx:alpine
+    container_name: app_nginx
+    volumes:
+      - public:/var/www/app/public:ro
+      - ./docker/example/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/example/nginx/certs:/etc/nginx/certs:ro
+    ports:
+      - "8080:80"
+      - "4443:443"
+    depends_on:
+      - php-fpm
+
+  db:
+    image: postgres:18
+    container_name: app_postgres
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $DB_USERNAME -d $DB_DATABASE" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: app_redis
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  horizon:
+    build:
+      context: .
+      dockerfile: docker/common/php-fpm/Dockerfile
+      args:
+        APP_ENV: local
+    container_name: app_horizon
+    command: php artisan horizon
+    volumes:
+      - storage:/var/www/app/storage
+    env_file: .env
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "artisan", "horizon:status"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/common/php-fpm/Dockerfile
+      args:
+        APP_ENV: local
+    container_name: app_scheduler
+    command: php artisan schedule:work
+    volumes:
+      - storage:/var/www/app/storage
+    env_file: .env
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+volumes:
+  public:
+  redis:
+  postgres:
+  storage:

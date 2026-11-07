@@ -1,0 +1,19 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+@source '../../../../resources/views/vendor/**/*';
+@source '../../../../app/Providers/**/*';
+
+@layer base {
+
+    :root {
+
+    }
+
+    :root[class~="dark"] {
+
+    }
+
+}
+
